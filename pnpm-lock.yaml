@@ -11,6 +11,9 @@ importers:
       '@tmcw/togeojson':
         specifier: ^7.1.2
         version: 7.1.2
+      '@types/geojson':
+        specifier: ^7946.0.0
+        version: 7946.0.16
       '@xmldom/xmldom':
         specifier: ^0.9.10
         version: 0.9.10
@@ -24,27 +27,18 @@ importers:
       '@mapbox/mapbox-gl-draw':
         specifier: ^1.5.0
         version: 1.5.1
-      '@types/geojson':
-        specifier: ^7946.0.16
-        version: 7946.0.16
       '@types/mapbox-gl':
         specifier: ^3.4.1
         version: 3.5.0
       '@types/mapbox__mapbox-gl-draw':
         specifier: ^1.4.9
         version: 1.4.9
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.15
       '@types/shpjs':
         specifier: ^3.4.7
         version: 3.4.7
       mapbox-gl:
         specifier: ^3.13.0
         version: 3.24.0
-      react:
-        specifier: ^19.1.1
-        version: 19.2.6
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(typescript@5.8.2)
@@ -424,9 +418,6 @@ packages:
   '@types/pbf@3.0.5':
     resolution: {integrity: sha512-j3pOPiEcWZ34R6a6mN07mUkM4o4Lwf6hPNt8eilOeZhTFbxFXmKhvXl9Y28jotFPaI1bpPDJsbCprUoNke6OrA==}
 
-  '@types/react@19.2.15':
-    resolution: {integrity: sha512-eRwcGNHve+E8qtEQSSRl6urh+rFop4v8gm6O8rGv25CodbvFdLjA1vVQ1KkiFE0w0UPOnb8tDiFKL5lp0rtY5Q==}
-
   '@types/shpjs@3.4.7':
     resolution: {integrity: sha512-/6PjggpFsq9NFxar6ZpXsnYZ+nQJR8Cv03Gne1enIJuMZ/eFVOpu0orHxL9D7RT3ciJElzF2H6l+49US23ydUw==}
 
@@ -481,9 +472,6 @@ packages:
 
   csscolorparser@1.0.3:
     resolution: {integrity: sha512-umPSgYwZkdFoUrH5hIq5kf0wPSXiro51nPw0j2K/c83KflkPSTBGMz6NJvMB+07VlL0y7VPo6QJcDjcgKTTm3w==}
-
-  csstype@3.2.3:
-    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -653,10 +641,6 @@ packages:
 
   quickselect@3.0.0:
     resolution: {integrity: sha512-XdjUArbK4Bm5fLLvlm5KpTFOiOThgfWWI4axAZDWg4E/0mKdZyI9tNEfds27qCi1ze/vwTR16kvmmGhRra3c2g==}
-
-  react@19.2.6:
-    resolution: {integrity: sha512-sfWGGfavi0xr8Pg0sVsyHMAOziVYKgPLNrS7ig+ivMNb3wbCBw3KxtflsGBAwD3gYQlE/AEZsTLgToRrSCjb0Q==}
-    engines: {node: '>=0.10.0'}
 
   readable-stream@2.3.8:
     resolution: {integrity: sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==}
@@ -1021,10 +1005,6 @@ snapshots:
 
   '@types/pbf@3.0.5': {}
 
-  '@types/react@19.2.15':
-    dependencies:
-      csstype: 3.2.3
-
   '@types/shpjs@3.4.7':
     dependencies:
       '@types/geojson': 7946.0.16
@@ -1064,8 +1044,6 @@ snapshots:
   core-util-is@1.0.3: {}
 
   csscolorparser@1.0.3: {}
-
-  csstype@3.2.3: {}
 
   debug@4.4.3:
     dependencies:
@@ -1244,8 +1222,6 @@ snapshots:
   protocol-buffers-schema@3.6.1: {}
 
   quickselect@3.0.0: {}
-
-  react@19.2.6: {}
 
   readable-stream@2.3.8:
     dependencies:

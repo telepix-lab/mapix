@@ -1,4 +1,5 @@
-export const VERSION = '0.0.1';
+declare const __MAPIX_VERSION__: string;
+export const VERSION = __MAPIX_VERSION__;
 
 export type {
   CompareEventType,
