@@ -1,0 +1,51 @@
+{
+  "name": "@telepix-lab/mapix",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src",
+    "check-types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.4.0",
+    "@types/geojson": "^7946.0.0",
+    "mapbox-gl": "^3.0.0",
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "@tmcw/togeojson": "^7.1.2",
+    "@xmldom/xmldom": "^0.9.10",
+    "jszip": "^3.10.1",
+    "shpjs": "^6.1.0"
+  },
+  "devDependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.5.0",
+    "@types/geojson": "^7946.0.16",
+    "@types/mapbox-gl": "^3.4.1",
+    "@types/mapbox__mapbox-gl-draw": "^1.4.9",
+    "@types/react": "^19.0.0",
+    "@types/shpjs": "^3.4.7",
+    "mapbox-gl": "^3.13.0",
+    "react": "^19.1.1",
+    "tsup": "^8.5.0",
+    "typescript": "5.8.2"
+  }
+}
