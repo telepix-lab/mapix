@@ -38,14 +38,11 @@ export class Compare {
   private _clearSync: () => void;
   private _onResize: () => void;
   private _ev: EventEmitter;
-  private _onDown: (e: MouseEvent | TouchEvent) => void;
-  private _onMove: (e: MouseEvent | TouchEvent) => void;
-  private _onEnd: (e: MouseEvent | TouchEvent) => void;
-  // Which pointer kind owns the drag in progress, null when idle
-  private _dragging: 'mouse' | 'touch' | null = null;
-  // Identifier of the finger currently dragging the handle, null when the drag
-  // is mouse-driven or not in progress.
-  private _touchId: number | null = null;
+  private _onDown: (e: PointerEvent) => void;
+  private _onMove: (e: MouseEvent) => void;
+  private _onEnd: (e: PointerEvent) => void;
+  // Id of the pointer dragging the handle, null when no drag is in progress
+  private _pointerId: number | null = null;
   private _savedStyles = new WeakMap<HTMLElement, ContainerStyles>();
   // Split ratio (0–1) of the container extent. This — not currentPosition —
   // is the source of truth across resizes, so a container that momentarily
@@ -84,6 +81,9 @@ export class Compare {
     this._swiper.className = this._horizontal
       ? 'compare-swiper-horizontal'
       : 'compare-swiper-vertical';
+    // Without this the browser claims touch drags for panning and sends
+    // pointercancel instead of pointermove
+    this._swiper.style.touchAction = 'none';
 
     this._controlContainer = document.createElement('div');
     this._controlContainer.className = this._horizontal
@@ -119,8 +119,7 @@ export class Compare {
       mapB.getContainer().addEventListener('mousemove', this._onMove);
     }
 
-    this._swiper.addEventListener('mousedown', this._onDown);
-    this._swiper.addEventListener('touchstart', this._onDown);
+    this._swiper.addEventListener('pointerdown', this._onDown);
 
     // Keep both maps interactive, and stack them at the same z-index so
     // neither sits above the other
@@ -206,98 +205,62 @@ export class Compare {
 
   // Pointer offset along the split axis, relative to the map container.
   // Not clamped here — _setPosition applies the authoritative bounds.
-  private _getPosition(e: MouseEvent | TouchEvent): number {
-    const point = this._getPoint(e);
+  private _getPosition(e: MouseEvent): number {
     return this._horizontal
-      ? point.clientY - this._bounds.top
-      : point.clientX - this._bounds.left;
+      ? e.clientY - this._bounds.top
+      : e.clientX - this._bounds.left;
   }
 
-  private _getPoint(e: MouseEvent | TouchEvent): MouseEvent | Touch {
-    // `instanceof TouchEvent` throws a ReferenceError in browsers without a
-    // global TouchEvent (desktop Safari, Firefox with touch disabled), which
-    // breaks mouse dragging too. Detect by the `touches` property instead.
-    if (!('touches' in e)) return e;
-    return this._findTrackedTouch(e.touches) ?? e.touches[0];
-  }
-
-  private _findTrackedTouch(touches: TouchList): Touch | undefined {
-    if (this._touchId === null) return undefined;
-    return Array.from(touches).find(
-      (touch) => touch.identifier === this._touchId
-    );
-  }
-
-  private _handleDown(e: MouseEvent | TouchEvent): void {
+  private _handleDown(e: PointerEvent): void {
+    // Only a primary press drags. Mouse right / middle buttons report a
+    // non-zero button and would open menus that never deliver a matching
+    // pointerup; touch contacts and the pen tip report 0.
+    if (e.button !== 0) return;
+    // One drag at a time: a second pointer landing on the handle must not take
+    // over and strand the one already holding it.
+    if (this._pointerId !== null) return;
     e.preventDefault();
-    // One drag at a time. A second finger on the handle, or a mouse press
-    // during a touch drag, would otherwise take the drag over and strand the
-    // pointer already holding it.
-    if (this._dragging !== null) return;
 
     // Re-measure: the container can move without resizing (page scroll, a
     // sibling panel opening), and a stale origin would offset the whole drag.
     this._bounds = this._mapB.getContainer().getBoundingClientRect();
 
-    if ('touches' in e) {
-      this._dragging = 'touch';
-      // Remember which finger grabbed the handle. Touch events bubble up to
-      // document, so without this any other finger's move or release would
-      // drive — and prematurely end — this drag.
-      this._touchId = e.changedTouches[0]?.identifier ?? null;
-      document.addEventListener('touchmove', this._onMove);
-      document.addEventListener('touchend', this._onEnd);
-      // The browser can cancel a touch instead of ending it (a second finger
-      // starting a pinch, a system edge swipe). Without this the drag would
-      // stay attached and keep tracking unrelated touches.
-      document.addEventListener('touchcancel', this._onEnd);
-    } else {
-      // Only the primary button drags. A right-click opens the context menu
-      // without delivering a mouseup, which would leave the divider stuck to
-      // the cursor with no button held.
-      if (e.button !== 0) return;
-      this._dragging = 'mouse';
-      document.addEventListener('mousemove', this._onMove);
-      document.addEventListener('mouseup', this._onEnd);
-    }
+    this._pointerId = e.pointerId;
+    // Capturing routes every later move / up / cancel for this pointer to the
+    // swiper, whatever the cursor is over. That keeps the drag alive outside
+    // the handle without document-level listeners, and no other pointer can
+    // drive or end it.
+    this._swiper.setPointerCapture(e.pointerId);
+    this._swiper.addEventListener('pointermove', this._onMove);
+    this._swiper.addEventListener('pointerup', this._onEnd);
+    this._swiper.addEventListener('pointercancel', this._onEnd);
   }
 
-  private _handleMove(e: MouseEvent | TouchEvent): void {
+  private _handleMove(e: MouseEvent): void {
     this._setPosition(this._getPosition(e));
   }
 
-  // Drops the document-level drag listeners. Removing all of them
-  // unconditionally is a no-op for the ones that were never attached.
+  // Ends the drag if one is in progress. Safe to call at any time, including
+  // from remove() while the pointer is still down.
   private _stopDrag(): void {
-    this._dragging = null;
-    this._touchId = null;
-    document.removeEventListener('mousemove', this._onMove);
-    document.removeEventListener('mouseup', this._onEnd);
-    document.removeEventListener('touchmove', this._onMove);
-    document.removeEventListener('touchend', this._onEnd);
-    document.removeEventListener('touchcancel', this._onEnd);
+    const pointerId = this._pointerId;
+    if (pointerId === null) return;
+    this._pointerId = null;
+
+    this._swiper.removeEventListener('pointermove', this._onMove);
+    this._swiper.removeEventListener('pointerup', this._onEnd);
+    this._swiper.removeEventListener('pointercancel', this._onEnd);
+    // Capture is released implicitly on pointerup / pointercancel, so only an
+    // still-held pointer (teardown mid-drag) needs this.
+    if (this._swiper.hasPointerCapture(pointerId)) {
+      this._swiper.releasePointerCapture(pointerId);
+    }
   }
 
-  private _handleEnd(e: MouseEvent | TouchEvent): void {
-    if (this._dragging === null) return;
-    // Only the pointer that started the drag may end it. Touch events bubble
-    // up to document from anywhere on the page, and on a hybrid device a stray
-    // mouseup can arrive in the middle of a touch drag.
-    const isTouch = 'changedTouches' in e;
-    if (isTouch !== (this._dragging === 'touch')) return;
-    // Releasing a secondary button mid-drag is not the end of the drag
-    if (!isTouch && e.button !== 0) return;
-    // A cancel is terminal — the browser took the gesture over and no touchend
-    // will follow — so it always ends the drag, whichever points it reports.
-    // Gating it on the tracked touch could leave the drag attached forever.
-    if (
-      isTouch &&
-      e.type !== 'touchcancel' &&
-      this._touchId !== null &&
-      !this._findTrackedTouch(e.changedTouches)
-    ) {
-      return;
-    }
+  private _handleEnd(e: PointerEvent): void {
+    // Another pointer pressed on the handle is still targeted at the swiper
+    // even though it never became the drag, so its release lands here too.
+    if (e.pointerId !== this._pointerId) return;
     this._stopDrag();
     this.fire('slideend', { currentPosition: this.currentPosition ?? 0 });
   }
@@ -324,11 +287,10 @@ export class Compare {
     this._restoreContainer(this._mapA);
     this._restoreContainer(this._mapB);
 
-    this._swiper.removeEventListener('mousedown', this._onDown);
-    this._swiper.removeEventListener('touchstart', this._onDown);
+    this._swiper.removeEventListener('pointerdown', this._onDown);
     // If remove() runs mid-drag (e.g. a route change while the handle is held),
-    // the document listeners would survive and run _handleMove against a
-    // removed map on the next pointer move, throwing and leaking.
+    // the captured pointer would keep delivering moves to a detached swiper and
+    // run _handleMove against a removed map.
     this._stopDrag();
     this._controlContainer.remove();
   }
