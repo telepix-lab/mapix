@@ -19,6 +19,14 @@ type ContainerStyles = Pick<
   (typeof STYLED_PROPERTIES)[number]
 >;
 
+/**
+ * Swipe-to-compare slider between two synchronized maps.
+ *
+ * An instance owns both map containers for its lifetime: it snapshots their
+ * inline styles on construction and writes them back in {@link Compare.remove}.
+ * Use one instance per container pair at a time — overlapping instances over
+ * the same maps would snapshot each other's styles as the originals.
+ */
 export class Compare {
   private _mapA: Map;
   private _mapB: Map;
@@ -152,7 +160,12 @@ export class Compare {
   }
 
   private _applyRatio(): void {
-    this._setPosition(this._ratio * this._extent);
+    const extent = this._extent;
+    // A zero extent (hidden tab or collapsed panel) has no meaningful position:
+    // applying one would un-clip both maps. Leave the current clip in place and
+    // let the next non-zero resize re-derive it from the preserved ratio.
+    if (extent <= 0) return;
+    this._setPosition(this._ratio * extent);
   }
 
   private _setPosition(x: number) {
