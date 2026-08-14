@@ -19,6 +19,10 @@ type ContainerStyles = Pick<
   (typeof STYLED_PROPERTIES)[number]
 >;
 
+// The hover path (options.mousemove) delivers plain MouseEvents, the drag path
+// PointerEvents; only the latter carry an id worth filtering on.
+const isPointerEvent = (e: MouseEvent): e is PointerEvent => 'pointerId' in e;
+
 /**
  * Swipe-to-compare slider between two synchronized maps.
  *
@@ -99,8 +103,15 @@ export class Compare {
       container.appendChild(this._controlContainer);
     }
 
-    // Measure before the containers become absolutely positioned below, so the
-    // rect still reflects the layout-driven size
+    // Style the containers before the first measurement — but after the
+    // container lookup above, so a failed construction leaves them untouched.
+    // Every measurement in this class then reads the same styled layout: the
+    // constructor here, `resize`, and the start of each drag.
+    // Keep both maps interactive, and stack them at the same z-index so
+    // neither sits above the other.
+    this._styleContainer(mapA);
+    this._styleContainer(mapB);
+
     this._bounds = mapB.getContainer().getBoundingClientRect();
     this._applyRatio();
 
@@ -120,11 +131,6 @@ export class Compare {
     }
 
     this._swiper.addEventListener('pointerdown', this._onDown);
-
-    // Keep both maps interactive, and stack them at the same z-index so
-    // neither sits above the other
-    this._styleContainer(mapA);
-    this._styleContainer(mapB);
   }
 
   private get _extent(): number {
@@ -225,18 +231,32 @@ export class Compare {
     // sibling panel opening), and a stale origin would offset the whole drag.
     this._bounds = this._mapB.getContainer().getBoundingClientRect();
 
-    this._pointerId = e.pointerId;
     // Capturing routes every later move / up / cancel for this pointer to the
-    // swiper, whatever the cursor is over. That keeps the drag alive outside
-    // the handle without document-level listeners, and no other pointer can
-    // drive or end it.
+    // swiper, whatever the cursor is over, keeping the drag alive outside the
+    // handle without document-level listeners. Claim it before recording the
+    // drag, so a failed capture leaves no half-started state behind.
     this._swiper.setPointerCapture(e.pointerId);
+    this._pointerId = e.pointerId;
     this._swiper.addEventListener('pointermove', this._onMove);
     this._swiper.addEventListener('pointerup', this._onEnd);
     this._swiper.addEventListener('pointercancel', this._onEnd);
+    // Capture can also be lost without either of those — the swiper being
+    // detached mid-drag, say — and the drag must not stay marked as live, or
+    // every later press would be refused with no way to recover.
+    this._swiper.addEventListener('lostpointercapture', this._onEnd);
   }
 
   private _handleMove(e: MouseEvent): void {
+    // Capture retargets only the captured pointer. Any other pointer over the
+    // handle — a second finger, or a mouse / hovering pen on a hybrid device —
+    // still hit-tests to it and would otherwise snap the divider to itself.
+    if (
+      this._pointerId !== null &&
+      isPointerEvent(e) &&
+      e.pointerId !== this._pointerId
+    ) {
+      return;
+    }
     this._setPosition(this._getPosition(e));
   }
 
@@ -250,6 +270,7 @@ export class Compare {
     this._swiper.removeEventListener('pointermove', this._onMove);
     this._swiper.removeEventListener('pointerup', this._onEnd);
     this._swiper.removeEventListener('pointercancel', this._onEnd);
+    this._swiper.removeEventListener('lostpointercapture', this._onEnd);
     // Capture is released implicitly on pointerup / pointercancel, so only an
     // still-held pointer (teardown mid-drag) needs this.
     if (this._swiper.hasPointerCapture(pointerId)) {
