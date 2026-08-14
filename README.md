@@ -91,6 +91,13 @@ compare.on('slideend', (e) => {
 compare.remove();
 ```
 
+The divider is driven by Pointer Events, so mouse, touch and pen all work
+through one path. The handle captures the pointer on press: the drag survives
+the cursor leaving the handle, a second pointer can neither take it over nor end
+it, and only a primary press starts one. The handle is given
+`touch-action: none` inline so the browser does not claim touch drags for
+panning.
+
 `remove()` writes back the inline styles each map container had at construction
 time and drops every listener the slider added, so a map reused elsewhere
 (typically the "before" map) is left as it was found — even if removal happens
