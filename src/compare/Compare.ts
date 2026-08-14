@@ -41,6 +41,8 @@ export class Compare {
   private _onDown: (e: MouseEvent | TouchEvent) => void;
   private _onMove: (e: MouseEvent | TouchEvent) => void;
   private _onEnd: (e: MouseEvent | TouchEvent) => void;
+  // Which pointer kind owns the drag in progress, null when idle
+  private _dragging: 'mouse' | 'touch' | null = null;
   // Identifier of the finger currently dragging the handle, null when the drag
   // is mouse-driven or not in progress.
   private _touchId: number | null = null;
@@ -228,7 +230,13 @@ export class Compare {
 
   private _handleDown(e: MouseEvent | TouchEvent): void {
     e.preventDefault();
+    // One drag at a time. A second finger on the handle, or a mouse press
+    // during a touch drag, would otherwise take the drag over and strand the
+    // pointer already holding it.
+    if (this._dragging !== null) return;
+
     if ('touches' in e) {
+      this._dragging = 'touch';
       // Remember which finger grabbed the handle. Touch events bubble up to
       // document, so without this any other finger's move or release would
       // drive — and prematurely end — this drag.
@@ -240,6 +248,11 @@ export class Compare {
       // stay attached and keep tracking unrelated touches.
       document.addEventListener('touchcancel', this._onEnd);
     } else {
+      // Only the primary button drags. A right-click opens the context menu
+      // without delivering a mouseup, which would leave the divider stuck to
+      // the cursor with no button held.
+      if (e.button !== 0) return;
+      this._dragging = 'mouse';
       document.addEventListener('mousemove', this._onMove);
       document.addEventListener('mouseup', this._onEnd);
     }
@@ -252,6 +265,7 @@ export class Compare {
   // Drops the document-level drag listeners. Removing all of them
   // unconditionally is a no-op for the ones that were never attached.
   private _stopDrag(): void {
+    this._dragging = null;
     this._touchId = null;
     document.removeEventListener('mousemove', this._onMove);
     document.removeEventListener('mouseup', this._onEnd);
@@ -261,11 +275,15 @@ export class Compare {
   }
 
   private _handleEnd(e: MouseEvent | TouchEvent): void {
-    // Only the finger that started the drag can end it; another finger's
-    // release elsewhere on the page bubbles here too.
+    if (this._dragging === null) return;
+    // Only the pointer that started the drag may end it. Touch events bubble
+    // up to document from anywhere on the page, and on a hybrid device a stray
+    // mouseup can arrive in the middle of a touch drag.
+    const isTouch = 'changedTouches' in e;
+    if (isTouch !== (this._dragging === 'touch')) return;
     if (
+      isTouch &&
       this._touchId !== null &&
-      'changedTouches' in e &&
       !this._findTrackedTouch(e.changedTouches)
     ) {
       return;

@@ -66,8 +66,9 @@ export function isRectangle(coordinates: Position[]): boolean {
  *   a single-part one is unwrapped and judged by its only polygon (parsed
  *   shapefiles and KML routinely wrap one rectangle this way)
  * - a polygon with holes (inner rings) is not a rectangle either
- * - a degenerate ring with no extent on either axis is rejected, unlike the
- *   ring-level {@link isRectangle}
+ * - a ring that collapses on *either* axis (width or height at or below
+ *   {@link TOLERANCE}) is rejected as degenerate, unlike the ring-level
+ *   {@link isRectangle}, which accepts it
  * - otherwise the outer ring is checked with {@link isRectangle}
  *
  * @param geometry Polygon or MultiPolygon geometry
@@ -87,7 +88,9 @@ function isRectangleRings(rings: Position[][]): boolean {
 }
 
 // A collapsed ring (all points on one line, or all identical) passes the
-// axis-aligned edge test, so require a real extent on both axes.
+// axis-aligned edge test, so require a real extent on both axes. A rectangle
+// thinner than TOLERANCE on one side is treated as collapsed too — at ~1cm of
+// longitude it is a line for any practical AOI.
 function hasArea(ring: Position[]): boolean {
   const xs = ring.map((point) => point[0]);
   const ys = ring.map((point) => point[1]);
