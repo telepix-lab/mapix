@@ -84,7 +84,13 @@ export function isRectangleGeometry(geometry: Polygon | MultiPolygon): boolean {
 
 // One polygon's rings: a single outer ring, since a donut with holes is not a rectangle
 function isRectangleRings(rings: Position[][]): boolean {
-  return rings.length === 1 && isRectangle(rings[0]) && hasArea(rings[0]);
+  if (rings.length !== 1) return false;
+  const ring = rings[0];
+  // isRectangle only inspects the first four positions, so a 5-position ring
+  // whose last point does not close it would slip through with any 5th vertex
+  if (ring.length === 5 && !getPolygonInfo(ring).isClosed) return false;
+
+  return isRectangle(ring) && hasArea(ring);
 }
 
 // A collapsed ring (all points on one line, or all identical) passes the

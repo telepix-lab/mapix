@@ -235,6 +235,10 @@ export class Compare {
     // pointer already holding it.
     if (this._dragging !== null) return;
 
+    // Re-measure: the container can move without resizing (page scroll, a
+    // sibling panel opening), and a stale origin would offset the whole drag.
+    this._bounds = this._mapB.getContainer().getBoundingClientRect();
+
     if ('touches' in e) {
       this._dragging = 'touch';
       // Remember which finger grabbed the handle. Touch events bubble up to
@@ -281,8 +285,14 @@ export class Compare {
     // mouseup can arrive in the middle of a touch drag.
     const isTouch = 'changedTouches' in e;
     if (isTouch !== (this._dragging === 'touch')) return;
+    // Releasing a secondary button mid-drag is not the end of the drag
+    if (!isTouch && e.button !== 0) return;
+    // A cancel is terminal — the browser took the gesture over and no touchend
+    // will follow — so it always ends the drag, whichever points it reports.
+    // Gating it on the tracked touch could leave the drag attached forever.
     if (
       isTouch &&
+      e.type !== 'touchcancel' &&
       this._touchId !== null &&
       !this._findTrackedTouch(e.changedTouches)
     ) {
