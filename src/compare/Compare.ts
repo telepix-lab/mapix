@@ -40,7 +40,10 @@ export class Compare {
   private _ev: EventEmitter;
   private _onDown: (e: MouseEvent | TouchEvent) => void;
   private _onMove: (e: MouseEvent | TouchEvent) => void;
-  private _onEnd: () => void;
+  private _onEnd: (e: MouseEvent | TouchEvent) => void;
+  // Identifier of the finger currently dragging the handle, null when the drag
+  // is mouse-driven or not in progress.
+  private _touchId: number | null = null;
   private _savedStyles = new WeakMap<HTMLElement, ContainerStyles>();
   // Split ratio (0–1) of the container extent. This — not currentPosition —
   // is the source of truth across resizes, so a container that momentarily
@@ -212,12 +215,24 @@ export class Compare {
     // `instanceof TouchEvent` throws a ReferenceError in browsers without a
     // global TouchEvent (desktop Safari, Firefox with touch disabled), which
     // breaks mouse dragging too. Detect by the `touches` property instead.
-    return 'touches' in e ? e.touches[0] : e;
+    if (!('touches' in e)) return e;
+    return this._findTrackedTouch(e.touches) ?? e.touches[0];
+  }
+
+  private _findTrackedTouch(touches: TouchList): Touch | undefined {
+    if (this._touchId === null) return undefined;
+    return Array.from(touches).find(
+      (touch) => touch.identifier === this._touchId
+    );
   }
 
   private _handleDown(e: MouseEvent | TouchEvent): void {
     e.preventDefault();
     if ('touches' in e) {
+      // Remember which finger grabbed the handle. Touch events bubble up to
+      // document, so without this any other finger's move or release would
+      // drive — and prematurely end — this drag.
+      this._touchId = e.changedTouches[0]?.identifier ?? null;
       document.addEventListener('touchmove', this._onMove);
       document.addEventListener('touchend', this._onEnd);
       // The browser can cancel a touch instead of ending it (a second finger
@@ -234,9 +249,10 @@ export class Compare {
     this._setPosition(this._getPosition(e));
   }
 
-  // Drops the document-level drag listeners. Removing all four unconditionally
-  // is a no-op for the ones that were never attached.
+  // Drops the document-level drag listeners. Removing all of them
+  // unconditionally is a no-op for the ones that were never attached.
   private _stopDrag(): void {
+    this._touchId = null;
     document.removeEventListener('mousemove', this._onMove);
     document.removeEventListener('mouseup', this._onEnd);
     document.removeEventListener('touchmove', this._onMove);
@@ -244,7 +260,16 @@ export class Compare {
     document.removeEventListener('touchcancel', this._onEnd);
   }
 
-  private _handleEnd(): void {
+  private _handleEnd(e: MouseEvent | TouchEvent): void {
+    // Only the finger that started the drag can end it; another finger's
+    // release elsewhere on the page bubbles here too.
+    if (
+      this._touchId !== null &&
+      'changedTouches' in e &&
+      !this._findTrackedTouch(e.changedTouches)
+    ) {
+      return;
+    }
     this._stopDrag();
     this.fire('slideend', { currentPosition: this.currentPosition ?? 0 });
   }

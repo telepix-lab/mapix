@@ -66,6 +66,8 @@ export function isRectangle(coordinates: Position[]): boolean {
  *   a single-part one is unwrapped and judged by its only polygon (parsed
  *   shapefiles and KML routinely wrap one rectangle this way)
  * - a polygon with holes (inner rings) is not a rectangle either
+ * - a degenerate ring with no extent on either axis is rejected, unlike the
+ *   ring-level {@link isRectangle}
  * - otherwise the outer ring is checked with {@link isRectangle}
  *
  * @param geometry Polygon or MultiPolygon geometry
@@ -81,7 +83,18 @@ export function isRectangleGeometry(geometry: Polygon | MultiPolygon): boolean {
 
 // One polygon's rings: a single outer ring, since a donut with holes is not a rectangle
 function isRectangleRings(rings: Position[][]): boolean {
-  return rings.length === 1 && isRectangle(rings[0]);
+  return rings.length === 1 && isRectangle(rings[0]) && hasArea(rings[0]);
+}
+
+// A collapsed ring (all points on one line, or all identical) passes the
+// axis-aligned edge test, so require a real extent on both axes.
+function hasArea(ring: Position[]): boolean {
+  const xs = ring.map((point) => point[0]);
+  const ys = ring.map((point) => point[1]);
+  return (
+    Math.max(...xs) - Math.min(...xs) > TOLERANCE &&
+    Math.max(...ys) - Math.min(...ys) > TOLERANCE
+  );
 }
 
 function distance(p1: Position, p2: Position): number {
