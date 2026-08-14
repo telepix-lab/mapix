@@ -50,8 +50,13 @@ export class Compare {
     this._mapB = mapB;
     this._horizontal = options.orientation === 'horizontal';
     // Reserved at each end, so the divider always leaves this much of both
-    // sides visible. Clamped once here rather than on every drag frame.
-    this._minRatio = Math.min(Math.max(options.minRatio ?? 0, 0), 0.5);
+    // sides visible. Clamped once here rather than on every drag frame; a
+    // non-finite value would poison every later position with NaN, so it falls
+    // back to "no minimum".
+    const minRatio = options.minRatio ?? 0;
+    this._minRatio = Number.isFinite(minRatio)
+      ? Math.min(Math.max(minRatio, 0), 0.5)
+      : 0;
     this._ev = new EventEmitter();
     this._onDown = this._handleDown.bind(this);
     this._onMove = this._handleMove.bind(this);
@@ -202,6 +207,10 @@ export class Compare {
     if ('touches' in e) {
       document.addEventListener('touchmove', this._onMove);
       document.addEventListener('touchend', this._onEnd);
+      // The browser can cancel a touch instead of ending it (a second finger
+      // starting a pinch, a system edge swipe). Without this the drag would
+      // stay attached and keep tracking unrelated touches.
+      document.addEventListener('touchcancel', this._onEnd);
     } else {
       document.addEventListener('mousemove', this._onMove);
       document.addEventListener('mouseup', this._onEnd);
@@ -219,6 +228,7 @@ export class Compare {
     document.removeEventListener('mouseup', this._onEnd);
     document.removeEventListener('touchmove', this._onMove);
     document.removeEventListener('touchend', this._onEnd);
+    document.removeEventListener('touchcancel', this._onEnd);
   }
 
   private _handleEnd(): void {
