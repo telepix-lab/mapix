@@ -66,9 +66,18 @@ export class Compare {
 
     this._clearSync = syncMove(mapA, mapB);
     this._onResize = () => {
+      // Keep the split ratio across resizes. currentPosition is in pixels, so
+      // re-applying it verbatim shifts the divider when the container changes
+      // size; scale it by the old/new extent instead.
+      const prevExtent = this._horizontal
+        ? this._bounds.height
+        : this._bounds.width;
       this._bounds = mapB.getContainer().getBoundingClientRect();
-      if (this.currentPosition != null) {
-        this._setPosition(this.currentPosition);
+      const nextExtent = this._horizontal
+        ? this._bounds.height
+        : this._bounds.width;
+      if (this.currentPosition != null && prevExtent > 0) {
+        this._setPosition((this.currentPosition / prevExtent) * nextExtent);
       }
     };
 
@@ -93,10 +102,13 @@ export class Compare {
   }
 
   private _setPosition(x: number) {
-    x = Math.min(
-      x,
-      this._horizontal ? this._bounds.height : this._bounds.width
-    );
+    const extent = this._horizontal ? this._bounds.height : this._bounds.width;
+    // Always reserve `minRatio` at each end. Once the divider reaches the
+    // minimum it pins to that value and cannot be dragged further that way.
+    const minRatio = Math.min(Math.max(this.options.minRatio ?? 0, 0), 0.5);
+    const min = extent * minRatio;
+    const max = extent * (1 - minRatio);
+    x = Math.min(Math.max(x, min), max);
     const transform = this._horizontal
       ? `translate(0, ${x.toString()}px)`
       : `translate(${x.toString()}px, 0)`;
@@ -130,12 +142,15 @@ export class Compare {
   }
 
   private _getPoint(e: MouseEvent | TouchEvent): MouseEvent | Touch {
-    return e instanceof TouchEvent ? e.touches[0] : e;
+    // `instanceof TouchEvent` throws a ReferenceError in browsers without a
+    // global TouchEvent (desktop Safari, Firefox with touch disabled), which
+    // breaks mouse dragging too. Detect by the `touches` property instead.
+    return 'touches' in e ? e.touches[0] : e;
   }
 
   private _handleDown(e: MouseEvent | TouchEvent): void {
     e.preventDefault();
-    if (e instanceof TouchEvent) {
+    if ('touches' in e) {
       document.addEventListener('touchmove', this._onMove);
       document.addEventListener('touchend', this._onTouchEnd);
     } else {
@@ -176,20 +191,38 @@ export class Compare {
     return this;
   }
 
+  // Reverts the inline styles and hover listener the constructor forced onto a
+  // map container. Called for mapA and mapB alike. mapA in particular is often
+  // the app's reusable main map: leaving `position` set would keep
+  // `position: absolute` after removal and affect later layout / control placement.
+  private _restoreContainer(map: Map): void {
+    const { style } = map.getContainer();
+    style.clipPath = '';
+    style.pointerEvents = '';
+    style.position = '';
+    style.zIndex = '';
+    // Symmetrically drop the hover listener added for options.mousemove
+    // (a no-op when it was never attached).
+    map.getContainer().removeEventListener('mousemove', this._onMove);
+  }
+
   public remove(): void {
     this._clearSync();
     this._mapB.off('resize', this._onResize);
 
-    // Reset clipping and styles
-    this._mapA.getContainer().style.clipPath = '';
-    this._mapB.getContainer().style.clipPath = '';
-    this._mapA.getContainer().style.pointerEvents = '';
-    this._mapB.getContainer().style.pointerEvents = '';
-    this._mapA.getContainer().style.zIndex = '';
-    this._mapB.getContainer().style.zIndex = '';
+    this._restoreContainer(this._mapA);
+    this._restoreContainer(this._mapB);
 
     this._swiper.removeEventListener('mousedown', this._onDown);
     this._swiper.removeEventListener('touchstart', this._onDown);
+    // If remove() runs mid-drag (e.g. a route change while the handle is held),
+    // the document listeners added by _handleDown would survive and run
+    // _handleMove against a removed map on the next pointer move, throwing and
+    // leaking. Removing them unconditionally is a no-op when not attached.
+    document.removeEventListener('mousemove', this._onMove);
+    document.removeEventListener('mouseup', this._onMouseUp);
+    document.removeEventListener('touchmove', this._onMove);
+    document.removeEventListener('touchend', this._onTouchEnd);
     this._controlContainer.remove();
   }
 }

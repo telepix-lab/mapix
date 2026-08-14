@@ -1,4 +1,4 @@
-import type { Position } from 'geojson';
+import type { MultiPolygon, Polygon, Position } from 'geojson';
 
 /** Tolerance for floating-point comparison. */
 const TOLERANCE = 0.0000001;
@@ -56,6 +56,25 @@ export function isRectangle(coordinates: Position[]): boolean {
 
   // First edge is neither horizontal nor vertical, so not a rectangle (e.g. trapezoid)
   return false;
+}
+
+/**
+ * Reports whether a GeoJSON Polygon / MultiPolygon geometry is a true
+ * axis-aligned rectangle.
+ *
+ * - a MultiPolygon is not a single rectangle, so it is always `false`
+ * - a Polygon with holes (inner rings) is not a rectangle either
+ * - otherwise the outer ring is checked with {@link isRectangle}
+ *
+ * @param geometry Polygon or MultiPolygon geometry
+ * @returns whether it is a rectangle
+ */
+export function isRectangleGeometry(geometry: Polygon | MultiPolygon): boolean {
+  if (geometry.type !== 'Polygon') return false;
+  // A single outer ring only — a donut with holes is not a rectangle
+  if (geometry.coordinates.length !== 1) return false;
+
+  return isRectangle(geometry.coordinates[0]);
 }
 
 function distance(p1: Position, p2: Position): number {

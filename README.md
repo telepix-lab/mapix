@@ -80,6 +80,7 @@ import { Compare } from '@telepix-lab/mapix';
 
 const compare = new Compare(beforeMap, afterMap, '#comparison-container', {
   orientation: 'vertical', // or 'horizontal'
+  minRatio: 0.2, // keep at least 20% for each side (default 0)
 });
 
 compare.on('slideend', (e) => {
@@ -89,6 +90,12 @@ compare.on('slideend', (e) => {
 // later
 compare.remove();
 ```
+
+`remove()` restores the inline styles the slider applied to both map containers
+and drops every listener it added, so a map reused elsewhere (typically the
+"before" map) is left as it was found — even if removal happens mid-drag.
+Resizing the container keeps the current split ratio rather than the pixel
+offset.
 
 ### File parsing
 
@@ -131,16 +138,16 @@ formatArea(8500, { thresholdSquareMeters: 1000 }); // switch unit earlier
 - Compare: `Compare`
 - File: `parseFile`, `getSupportedFileType`, `SUPPORTED_FILE_ACCEPT`,
   `countVertices`
-- Geometry utils: `isRectangle`, `getPolygonInfo`, `getOppositeVertexIndex`,
-  `scalePolygonFromVertex`, `constrainToRectangle`
+- Geometry utils: `isRectangle`, `isRectangleGeometry`, `getPolygonInfo`,
+  `getOppositeVertexIndex`, `scalePolygonFromVertex`, `constrainToRectangle`
 - Formatting: `formatArea`
 - Style constants: `AOI_FILL_COLOR`, `AOI_FILL_OPACITY`, `AOI_LINE_COLOR`,
   `AOI_LINE_WIDTH`
 - Map helpers: `removeLayerIfExists`, `removeSourceIfExists`
 
 Types for all of the above are exported, including the GeoJSON types
-(`Feature`, `FeatureCollection`, `Polygon`, `MultiPolygon`, `Position`)
-re-exported for convenience.
+(`Feature`, `FeatureCollection`, `Polygon`, `MultiPolygon`, `Position`, and the
+`PointFeature` alias for `Feature<Point>`) re-exported for convenience.
 
 ## License
 
