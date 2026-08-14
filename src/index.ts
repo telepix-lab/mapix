@@ -17,6 +17,7 @@ export type {
   FileParseResult,
   GeoJsonCorrection,
   MultiPolygon,
+  PointFeature,
   Polygon,
   PolygonIntersection,
   PolygonOptions,
@@ -43,6 +44,7 @@ export {
   getOppositeVertexIndex,
   getPolygonInfo,
   isRectangle,
+  isRectangleGeometry,
   scalePolygonFromVertex,
 } from './draw/utils/rectangle-utils';
 

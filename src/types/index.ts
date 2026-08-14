@@ -2,6 +2,8 @@
  * mapix public API type definitions.
  */
 
+import type { Feature, Point } from 'geojson';
+
 // Tile types
 export type { TileJsonResponse } from './tile';
 
@@ -44,3 +46,11 @@ export type {
   Polygon,
   Position,
 } from 'geojson';
+
+/**
+ * GeoJSON Point Feature, for single-coordinate geometries such as location
+ * markers (pins).
+ * (Re-exporting `Point` directly would let the DTS bundler tree-shake it as an
+ *  unreferenced type, so it is exposed as a referenced alias instead.)
+ */
+export type PointFeature = Feature<Point>;
