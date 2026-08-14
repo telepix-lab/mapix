@@ -59,22 +59,29 @@ export function isRectangle(coordinates: Position[]): boolean {
 }
 
 /**
- * Reports whether a GeoJSON Polygon / MultiPolygon geometry is a true
+ * Reports whether a GeoJSON Polygon / MultiPolygon geometry is a single true
  * axis-aligned rectangle.
  *
- * - a MultiPolygon is not a single rectangle, so it is always `false`
- * - a Polygon with holes (inner rings) is not a rectangle either
+ * - a multi-part MultiPolygon is not a single rectangle, so it is `false`;
+ *   a single-part one is unwrapped and judged by its only polygon (parsed
+ *   shapefiles and KML routinely wrap one rectangle this way)
+ * - a polygon with holes (inner rings) is not a rectangle either
  * - otherwise the outer ring is checked with {@link isRectangle}
  *
  * @param geometry Polygon or MultiPolygon geometry
  * @returns whether it is a rectangle
  */
 export function isRectangleGeometry(geometry: Polygon | MultiPolygon): boolean {
-  if (geometry.type !== 'Polygon') return false;
-  // A single outer ring only — a donut with holes is not a rectangle
-  if (geometry.coordinates.length !== 1) return false;
+  if (geometry.type === 'MultiPolygon') {
+    if (geometry.coordinates.length !== 1) return false;
+    return isRectangleRings(geometry.coordinates[0]);
+  }
+  return isRectangleRings(geometry.coordinates);
+}
 
-  return isRectangle(geometry.coordinates[0]);
+// One polygon's rings: a single outer ring, since a donut with holes is not a rectangle
+function isRectangleRings(rings: Position[][]): boolean {
+  return rings.length === 1 && isRectangle(rings[0]);
 }
 
 function distance(p1: Position, p2: Position): number {
