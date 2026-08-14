@@ -91,11 +91,11 @@ compare.on('slideend', (e) => {
 compare.remove();
 ```
 
-`remove()` restores the inline styles the slider applied to both map containers
-and drops every listener it added, so a map reused elsewhere (typically the
-"before" map) is left as it was found — even if removal happens mid-drag.
-Resizing the container keeps the current split ratio rather than the pixel
-offset.
+`remove()` writes back the inline styles each map container had at construction
+time and drops every listener the slider added, so a map reused elsewhere
+(typically the "before" map) is left as it was found — even if removal happens
+mid-drag. Resizing the container keeps the current split ratio rather than the
+pixel offset, including across a resize to zero size (a hidden tab or panel).
 
 ### File parsing
 
