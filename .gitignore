@@ -21,3 +21,6 @@ pnpm-debug.log*
 .DS_Store
 .env
 .env.local
+
+# Claude Code worktrees (checkouts, never source)
+.claude/worktrees/
