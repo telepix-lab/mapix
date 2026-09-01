@@ -23,6 +23,41 @@ type ContainerStyles = Pick<
 // PointerEvents; only the latter carry an id worth filtering on.
 const isPointerEvent = (e: MouseEvent): e is PointerEvent => 'pointerId' in e;
 
+/** Where the divider sits when the caller does not say. */
+const DEFAULT_RATIO = 0.5;
+
+/** The divider's travel limits, resolved to a ratio at each end. */
+interface TravelLimits {
+  min: number;
+  max: number;
+}
+
+// Clamps a caller-supplied ratio into 0–1, falling back when it is absent or
+// non-finite. Resolved once at construction rather than on every drag frame: a
+// NaN limit would poison every later position, and through the stored ratio
+// every later resize too.
+const clampRatio = (value: number | undefined, fallback: number): number =>
+  value === undefined || !Number.isFinite(value)
+    ? fallback
+    : Math.min(Math.max(value, 0), 1);
+
+/**
+ * Resolves the divider's travel limits. `bounds` wins when given; `minRatio`
+ * stays supported as the symmetric shorthand it has always been.
+ */
+const resolveLimits = (options: CompareOptions): TravelLimits => {
+  if (options.bounds) {
+    const min = clampRatio(options.bounds.min, 0);
+    // An inverted range pins the divider at `min` rather than quietly swapping
+    // the ends: the caller sees the mistake, and the divider still has one
+    // defined place to sit.
+    return { min, max: Math.max(min, clampRatio(options.bounds.max, 1)) };
+  }
+
+  const minRatio = Math.min(clampRatio(options.minRatio, 0), 0.5);
+  return { min: minRatio, max: 1 - minRatio };
+};
+
 /**
  * Swipe-to-compare slider between two synchronized maps.
  *
@@ -36,9 +71,11 @@ export class Compare {
   private _mapB: Map;
   private _swiper: HTMLElement;
   private _controlContainer: HTMLElement;
-  private _bounds: DOMRect;
+  // Last measured geometry of the map container. Cached rather than measured
+  // per frame, so every position in this class is derived from one snapshot.
+  private _rect: DOMRect;
   private _horizontal: boolean;
-  private _minRatio: number;
+  private _limits: TravelLimits;
   private _clearSync: () => void;
   private _onResize: () => void;
   private _ev: EventEmitter;
@@ -48,11 +85,14 @@ export class Compare {
   // Id of the pointer dragging the handle, null when no drag is in progress
   private _pointerId: number | null = null;
   private _savedStyles = new WeakMap<HTMLElement, ContainerStyles>();
-  // Split ratio (0–1) of the container extent. This — not currentPosition —
-  // is the source of truth across resizes, so a container that momentarily
-  // reports a zero extent (hidden tab, display:none) cannot destroy the split.
-  private _ratio = 0.5;
-  private currentPosition: number | null;
+  // Split ratio (0–1) of the container extent, and the source of truth across
+  // resizes: a container that momentarily reports a zero extent (hidden tab,
+  // display:none) cannot destroy the split.
+  private _ratio: number;
+  // The same split in px along the axis, from the container's start edge. Kept
+  // so getPosition and the slideend payload report exactly what was last
+  // written rather than recomputing it against a possibly newer extent.
+  private _position = 0;
 
   constructor(
     mapA: Map,
@@ -71,19 +111,12 @@ export class Compare {
     this._mapA = mapA;
     this._mapB = mapB;
     this._horizontal = options.orientation === 'horizontal';
-    // Reserved at each end, so the divider always leaves this much of both
-    // sides visible. Clamped once here rather than on every drag frame; a
-    // non-finite value would poison every later position with NaN, so it falls
-    // back to "no minimum".
-    const minRatio = options.minRatio ?? 0;
-    this._minRatio = Number.isFinite(minRatio)
-      ? Math.min(Math.max(minRatio, 0), 0.5)
-      : 0;
+    this._limits = resolveLimits(options);
+    this._ratio = clampRatio(options.initialRatio, DEFAULT_RATIO);
     this._ev = new EventEmitter();
     this._onDown = this._handleDown.bind(this);
     this._onMove = this._handleMove.bind(this);
     this._onEnd = this._handleEnd.bind(this);
-    this.currentPosition = null;
 
     // Capture the containers' own inline styles before anything below writes to them
     this._snapshotContainer(mapA);
@@ -122,14 +155,14 @@ export class Compare {
     this._styleContainer(mapA);
     this._styleContainer(mapB);
 
-    this._bounds = mapB.getContainer().getBoundingClientRect();
-    this._applyRatio();
+    this._rect = mapB.getContainer().getBoundingClientRect();
+    this._setRatio(this._ratio);
 
     this._onResize = () => {
-      this._bounds = mapB.getContainer().getBoundingClientRect();
+      this._rect = mapB.getContainer().getBoundingClientRect();
       // Re-derive pixels from the ratio: the split stays proportional instead
       // of sticking to a pixel offset that no longer means the same thing.
-      this._applyRatio();
+      this._setRatio(this._ratio);
     };
 
     mapB.on('resize', this._onResize);
@@ -143,7 +176,7 @@ export class Compare {
   }
 
   private get _extent(): number {
-    return this._horizontal ? this._bounds.height : this._bounds.width;
+    return this._horizontal ? this._rect.height : this._rect.width;
   }
 
   private _snapshotContainer(map: Map): void {
@@ -178,22 +211,24 @@ export class Compare {
     el.removeEventListener('mousemove', this._onMove);
   }
 
-  private _applyRatio(): void {
-    const extent = this._extent;
-    // A zero extent (hidden tab or collapsed panel) has no meaningful position:
-    // applying one would un-clip both maps. Leave the current clip in place and
-    // let the next non-zero resize re-derive it from the preserved ratio.
-    if (extent <= 0) return;
-    this._setPosition(this._ratio * extent);
+  // Places the divider at `ratio` of the container extent.
+  private _setRatio(ratio: number): void {
+    this._setPosition(ratio * this._extent);
   }
 
   private _setPosition(x: number) {
     const extent = this._extent;
-    // Once the divider reaches the minimum it pins there and cannot be dragged
+    // A zero extent (hidden tab or collapsed panel) has no meaningful position:
+    // applying one would un-clip both maps, and dividing by it would poison the
+    // stored ratio. Leave the current clip in place and let the next non-zero
+    // resize re-derive it from the ratio that survives here.
+    if (extent <= 0) return;
+
+    // Once the divider reaches a limit it pins there and cannot be pushed
     // further that way.
     const position = Math.min(
-      Math.max(x, extent * this._minRatio),
-      extent * (1 - this._minRatio)
+      Math.max(x, extent * this._limits.min),
+      extent * this._limits.max
     );
 
     this._controlContainer.style.transform = this._horizontal
@@ -202,8 +237,8 @@ export class Compare {
 
     // Clip each map's visible area with clipPath to create the split effect
     const clipPathA = this._horizontal
-      ? `inset(0 0 ${(this._bounds.height - position).toString()}px 0)`
-      : `inset(0 ${(this._bounds.width - position).toString()}px 0 0)`;
+      ? `inset(0 0 ${(this._rect.height - position).toString()}px 0)`
+      : `inset(0 ${(this._rect.width - position).toString()}px 0 0)`;
     const clipPathB = this._horizontal
       ? `inset(${position.toString()}px 0 0 0)`
       : `inset(0 0 0 ${position.toString()}px)`;
@@ -211,19 +246,16 @@ export class Compare {
     this._mapA.getContainer().style.clipPath = clipPathA;
     this._mapB.getContainer().style.clipPath = clipPathB;
 
-    this.currentPosition = position;
-    // A zero extent carries no ratio information, so keep the previous one
-    if (extent > 0) {
-      this._ratio = position / extent;
-    }
+    this._position = position;
+    this._ratio = position / extent;
   }
 
   // Pointer offset along the split axis, relative to the map container.
   // Not clamped here — _setPosition applies the authoritative bounds.
   private _getPosition(e: MouseEvent): number {
     return this._horizontal
-      ? e.clientY - this._bounds.top
-      : e.clientX - this._bounds.left;
+      ? e.clientY - this._rect.top
+      : e.clientX - this._rect.left;
   }
 
   private _handleDown(e: PointerEvent): void {
@@ -238,7 +270,7 @@ export class Compare {
 
     // Re-measure: the container can move without resizing (page scroll, a
     // sibling panel opening), and a stale origin would offset the whole drag.
-    this._bounds = this._mapB.getContainer().getBoundingClientRect();
+    this._rect = this._mapB.getContainer().getBoundingClientRect();
 
     // Capturing routes every later move / up / cancel for this pointer to the
     // swiper, whatever the cursor is over, keeping the drag alive outside the
@@ -292,7 +324,31 @@ export class Compare {
     // even though it never became the drag, so its release lands here too.
     if (e.pointerId !== this._pointerId) return;
     this._stopDrag();
-    this.fire('slideend', { currentPosition: this.currentPosition ?? 0 });
+    this.fire('slideend', { currentPosition: this._position });
+  }
+
+  /**
+   * Current divider offset in px along the split axis, measured from the
+   * container's start edge (left for a vertical split, top for a horizontal
+   * one).
+   */
+  public getPosition(): number {
+    return this._position;
+  }
+
+  /**
+   * Moves the divider to `px` along the split axis, clamped to the configured
+   * bounds. A no-op while the container reports a zero extent.
+   *
+   * This does not fire `slideend`. That event reports the end of a user
+   * gesture, and a caller moving the divider itself already knows where it put
+   * it.
+   */
+  public setPosition(px: number): void {
+    // A non-finite offset would clamp to NaN, un-clip both maps, and poison
+    // every later resize through the stored ratio.
+    if (!Number.isFinite(px)) return;
+    this._setPosition(px);
   }
 
   public on(type: CompareEventType, fn: (e: SlideEndEvent) => void): this {

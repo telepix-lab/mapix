@@ -81,7 +81,11 @@ import { Compare } from '@telepix-lab/mapix';
 const compare = new Compare(beforeMap, afterMap, '#comparison-container', {
   orientation: 'vertical', // or 'horizontal'
   minRatio: 0.2, // keep at least 20% for each side (default 0)
+  initialRatio: 0.35, // where the divider starts (default 0.5)
 });
+
+compare.getPosition(); // px along the split axis
+compare.setPosition(240); // clamped to the bounds
 
 compare.on('slideend', (e) => {
   console.log('slider position:', e.currentPosition);
@@ -90,6 +94,24 @@ compare.on('slideend', (e) => {
 // later
 compare.remove();
 ```
+
+`minRatio` reserves the same share at both ends. A layout obstructed on one side
+only, a panel over the left half say, can set the two ends independently with
+`bounds`, which supersedes `minRatio` when both are given:
+
+```ts
+new Compare(beforeMap, afterMap, container, {
+  bounds: { min: 0.25, max: 0.95 }, // ratios of the container extent
+  initialRatio: 0.6,
+});
+```
+
+Positions are px offsets from the container's start edge (left for a vertical
+split, top for a horizontal one). `setPosition` clamps to the bounds and fires
+no event, since `slideend` reports the end of a user gesture and a caller moving
+the divider already knows where it put it. Prefer `initialRatio` over a
+`setPosition` call straight after construction, so the divider does not show at
+the centre for a frame first.
 
 The divider is driven by Pointer Events, so mouse, touch and pen all work
 through one path. The handle captures the pointer on press: the drag survives

@@ -2,6 +2,7 @@ declare const __MAPIX_VERSION__: string;
 export const VERSION = __MAPIX_VERSION__;
 
 export type {
+  CompareBounds,
   CompareEventType,
   CompareOptions,
   CompareOrientation,

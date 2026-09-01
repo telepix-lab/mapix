@@ -9,6 +9,7 @@ export type { TileJsonResponse } from './tile';
 
 // Compare types
 export type {
+  CompareBounds,
   CompareEventType,
   CompareOptions,
   CompareOrientation,
