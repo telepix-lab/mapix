@@ -27,10 +27,13 @@ export interface HandleAccessibilityOptions {
   limits: { min: number; max: number };
   /** The divider's starting ratio, published as the first `aria-valuenow`. */
   ratio: number;
-  /** Moves the divider to an absolute ratio. Compare clamps it. */
-  moveTo: (ratio: number) => void;
-  /** Moves the divider by a ratio delta. Compare clamps it. */
-  moveBy: (delta: number) => void;
+  /**
+   * Moves the divider to an absolute ratio. Compare clamps it, and reports
+   * whether the divider actually moved.
+   */
+  moveTo: (ratio: number) => boolean;
+  /** Moves the divider by a ratio delta, reporting movement like `moveTo`. */
+  moveBy: (delta: number) => boolean;
   /** A keyboard gesture ended, so Compare can report it. */
   onCommit: () => void;
 }
@@ -70,6 +73,10 @@ const keyDelta = (key: string, step: number): number | null => {
   }
 };
 
+/** Whether this module acts on a key, and so owns its release. */
+const isHandledKey = (key: string): boolean =>
+  key === 'Home' || key === 'End' || keyDelta(key, 1) !== null;
+
 /**
  * Makes Compare's divider handle operable from the keyboard and legible to
  * assistive technology.
@@ -90,11 +97,19 @@ export const attachHandleAccessibility = ({
   moveBy,
   onCommit,
 }: HandleAccessibilityOptions): HandleAccessibility => {
-  // Whether the divider has moved since the last key release. A held arrow
-  // repeats at the OS rate, and reporting each repeat would turn one gesture
-  // into a burst of events; this way the keyboard path ends the way the drag
-  // path does, once, when the user lets go.
+  // Whether this gesture has actually moved the divider. Taken from what
+  // Compare reports rather than from the keypress, so arrowing on against a
+  // limit does not report a gesture that changed nothing.
   let moved = false;
+
+  // A held arrow repeats at the OS rate, and reporting each repeat would turn
+  // one gesture into a burst of events. Committing on release ends the keyboard
+  // path the way the drag path ends: once, when the user lets go.
+  const commit = (): void => {
+    if (!moved) return;
+    moved = false;
+    onCommit();
+  };
 
   const handleKeyDown = (event: KeyboardEvent): void => {
     // Leave the browser's own chords alone, history navigation among them.
@@ -103,29 +118,43 @@ export const attachHandleAccessibility = ({
     const delta = keyDelta(event.key, step);
     if (delta !== null) {
       event.preventDefault();
-      moveBy(delta);
-      moved = true;
+      if (moveBy(delta)) moved = true;
       return;
     }
 
     if (event.key !== 'Home' && event.key !== 'End') return;
     event.preventDefault();
-    moveTo(event.key === 'Home' ? limits.min : limits.max);
-    moved = true;
+    if (moveTo(event.key === 'Home' ? limits.min : limits.max)) moved = true;
   };
 
-  const handleKeyUp = (): void => {
-    if (!moved) return;
-    moved = false;
-    onCommit();
+  // Only our own keys end a gesture. Committing on any release would fire
+  // mid-gesture when a modifier is tapped while an arrow is held, and fire
+  // again when a Tab away and back lands its release here.
+  const handleKeyUp = (event: KeyboardEvent): void => {
+    if (!isHandledKey(event.key)) return;
+    commit();
   };
 
+  // Focus leaving ends the gesture too. Dropping the pending move instead would
+  // lose the report for a gesture the user really made.
+  const handleBlur = (): void => {
+    commit();
+  };
+
+  // Compare writes a position on every frame of a drag, and percent() collapses
+  // the whole travel to at most 101 strings. Without this guard, assistive
+  // technology is told the value changed dozens of times a second while the
+  // announced value has not changed at all.
+  let published = '';
   const update = (next: number): void => {
     // aria-valuenow has to stay inside the advertised range. Compare already
     // clamps, so this only matters while the container reports a zero extent
     // and no position has been applied yet.
     const bounded = Math.min(Math.max(next, limits.min), limits.max);
-    element.setAttribute('aria-valuenow', percent(bounded));
+    const value = percent(bounded);
+    if (value === published) return;
+    published = value;
+    element.setAttribute('aria-valuenow', value);
   };
 
   element.setAttribute('role', 'slider');
@@ -144,12 +173,14 @@ export const attachHandleAccessibility = ({
 
   element.addEventListener('keydown', handleKeyDown);
   element.addEventListener('keyup', handleKeyUp);
+  element.addEventListener('blur', handleBlur);
 
   return {
     update,
     destroy: () => {
       element.removeEventListener('keydown', handleKeyDown);
       element.removeEventListener('keyup', handleKeyUp);
+      element.removeEventListener('blur', handleBlur);
       for (const attribute of MANAGED_ATTRIBUTES) {
         element.removeAttribute(attribute);
       }

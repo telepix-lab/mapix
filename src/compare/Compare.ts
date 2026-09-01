@@ -54,21 +54,37 @@ const clampRatio = (value: number | undefined, fallback: number): number =>
     : Math.min(Math.max(value, 0), 1);
 
 /**
- * Resolves the divider's travel limits. `bounds` wins when given; `minRatio`
- * stays supported as the symmetric shorthand it has always been.
+ * Resolves the divider's travel limits. `minRatio` is the symmetric shorthand;
+ * each end of `bounds` overrides its own side of it.
+ *
+ * Per end rather than per object: branching on `bounds` as a whole would let a
+ * partial or empty one silently discard the reserve `minRatio` asked for, and
+ * both of its fields are optional, so `bounds: props.bounds ?? {}` type-checks.
  */
 const resolveLimits = (options: CompareOptions): TravelLimits => {
-  if (options.bounds) {
-    const min = clampRatio(options.bounds.min, 0);
-    // An inverted range pins the divider at `min` rather than quietly swapping
-    // the ends: the caller sees the mistake, and the divider still has one
-    // defined place to sit.
-    return { min, max: Math.max(min, clampRatio(options.bounds.max, 1)) };
-  }
-
   const minRatio = Math.min(clampRatio(options.minRatio, 0), 0.5);
-  return { min: minRatio, max: 1 - minRatio };
+  const min = clampRatio(options.bounds?.min, minRatio);
+  // An inverted range pins the divider at `min` rather than quietly swapping
+  // the ends: the caller sees the mistake, and the divider still has one
+  // defined place to sit.
+  const max = Math.max(min, clampRatio(options.bounds?.max, 1 - minRatio));
+  return { min, max };
 };
+
+// A step is a distance, not a position, so it cannot go through clampRatio:
+// zero and every negative would land on 0, swallowing the arrow keys while
+// moving nothing. Anything outside (0, 1] falls back to the default.
+const resolveStep = (value: number | undefined): number =>
+  value === undefined || !Number.isFinite(value) || value <= 0
+    ? DEFAULT_KEYBOARD_STEP
+    : Math.min(value, 1);
+
+// A blank label is worse than no option at all: `aria-label=""` contributes no
+// accessible name and the handle has no text of its own to fall back on, so the
+// slider would be announced unnamed. A missing i18n key is the usual way one
+// arrives here.
+const resolveLabel = (label: string | undefined): string =>
+  label !== undefined && label.trim() !== '' ? label : DEFAULT_HANDLE_LABEL;
 
 /**
  * Swipe-to-compare slider between two synchronized maps.
@@ -96,6 +112,14 @@ export class Compare {
   private _onEnd: (e: PointerEvent) => void;
   // Id of the pointer dragging the handle, null when no drag is in progress
   private _pointerId: number | null = null;
+  // Whether the current drag has actually moved the divider. A press that moved
+  // nothing is not a completed gesture and must not be reported as one.
+  private _dragMoved = false;
+  // options.mousemove: the divider follows the cursor across both maps.
+  private _hover: boolean;
+  // Set by remove(). The instance has handed the containers back by then, and
+  // nothing may write to them again.
+  private _removed = false;
   private _handle: HandleAccessibility;
   private _savedStyles = new WeakMap<HTMLElement, ContainerStyles>();
   // Split ratio (0–1) of the container extent, and the source of truth across
@@ -124,8 +148,17 @@ export class Compare {
     this._mapA = mapA;
     this._mapB = mapB;
     this._horizontal = options.orientation === 'horizontal';
+    this._hover = options.mousemove === true;
     this._limits = resolveLimits(options);
-    this._ratio = clampRatio(options.initialRatio, DEFAULT_RATIO);
+    // Clamped to the limits here as well as in _setPosition, which declines to
+    // run at all while the container has no extent. Without this a Compare
+    // built in a hidden tab would hold a ratio outside its advertised range,
+    // and aria-valuenow would disagree with getPosition().
+    const initialRatio = clampRatio(options.initialRatio, DEFAULT_RATIO);
+    this._ratio = Math.min(
+      Math.max(initialRatio, this._limits.min),
+      this._limits.max
+    );
     this._ev = new EventEmitter();
     this._onDown = this._handleDown.bind(this);
     this._onMove = this._handleMove.bind(this);
@@ -135,13 +168,13 @@ export class Compare {
     this._snapshotContainer(mapA);
     this._snapshotContainer(mapB);
 
-    // Link the cameras before any DOM is mutated. syncMove now jumps the second
-    // map at setup, which fires that map's own move events synchronously, so a
+    // Link the cameras before any DOM is mutated. syncMove jumps the second map
+    // at setup, which fires that map's own move events synchronously, so a
     // consumer handler throwing out of one would abandon the constructor. That
-    // must not be able to leave half-styled containers behind, with remove()
-    // unreachable because `new` never returned. Nothing above this line has
-    // written to the page, and syncMove aligns before it registers anything, so
-    // a throw there leaves no listeners either.
+    // must not be able to leave half-styled containers and a live handle
+    // behind, with remove() unreachable because `new` never returned. Nothing
+    // above this line has written to the page, and syncMove aligns before it
+    // registers anything, so a throw there leaves no listeners either.
     this._clearSync = syncMove(mapA, mapB);
 
     this._swiper = document.createElement('div');
@@ -171,16 +204,17 @@ export class Compare {
     this._handle = attachHandleAccessibility({
       element: this._swiper,
       orientation: this._horizontal ? 'horizontal' : 'vertical',
-      label: options.handleLabel ?? DEFAULT_HANDLE_LABEL,
-      step: clampRatio(options.keyboardStep, DEFAULT_KEYBOARD_STEP),
+      label: resolveLabel(options.handleLabel),
+      step: resolveStep(options.keyboardStep),
       limits: this._limits,
       ratio: this._ratio,
-      moveTo: (ratio) => {
-        this._setRatio(ratio);
-      },
-      moveBy: (delta) => {
-        this._setRatio(this._ratio + delta);
-      },
+      // A drag owns the divider while it lasts. A keyboard move landing
+      // mid-drag would be snapped away by the next pointermove, after
+      // reporting a position the divider never settled at, so the keyboard is
+      // told it did not move and reports nothing.
+      moveTo: (ratio) => this._pointerId === null && this._setRatio(ratio),
+      moveBy: (delta) =>
+        this._pointerId === null && this._setRatio(this._ratio + delta),
       onCommit: () => {
         this.fire('slideend', { currentPosition: this._position });
       },
@@ -198,7 +232,7 @@ export class Compare {
 
     mapB.on('resize', this._onResize);
 
-    if (options.mousemove) {
+    if (this._hover) {
       mapA.getContainer().addEventListener('mousemove', this._onMove);
       mapB.getContainer().addEventListener('mousemove', this._onMove);
     }
@@ -242,18 +276,25 @@ export class Compare {
     el.removeEventListener('mousemove', this._onMove);
   }
 
-  // Places the divider at `ratio` of the container extent.
-  private _setRatio(ratio: number): void {
-    this._setPosition(ratio * this._extent);
+  // Places the divider at `ratio` of the container extent. Returns whether the
+  // divider actually moved.
+  private _setRatio(ratio: number): boolean {
+    return this._setPosition(ratio * this._extent);
   }
 
-  private _setPosition(x: number) {
+  /** Returns whether the divider actually moved. */
+  private _setPosition(x: number): boolean {
+    // remove() has handed the containers back to the caller by now. Writing a
+    // clip after that would undo the restore on a map the app is still using
+    // elsewhere, with no API left on the dead instance to clear it.
+    if (this._removed) return false;
+
     const extent = this._extent;
     // A zero extent (hidden tab or collapsed panel) has no meaningful position:
     // applying one would un-clip both maps, and dividing by it would poison the
     // stored ratio. Leave the current clip in place and let the next non-zero
     // resize re-derive it from the ratio that survives here.
-    if (extent <= 0) return;
+    if (extent <= 0) return false;
 
     // Once the divider reaches a limit it pins there and cannot be pushed
     // further that way.
@@ -277,9 +318,11 @@ export class Compare {
     this._mapA.getContainer().style.clipPath = clipPathA;
     this._mapB.getContainer().style.clipPath = clipPathB;
 
+    const moved = position !== this._position;
     this._position = position;
     this._ratio = position / extent;
     this._handle.update(this._ratio);
+    return moved;
   }
 
   // Pointer offset along the split axis, relative to the map container.
@@ -299,6 +342,14 @@ export class Compare {
     // over and strand the one already holding it.
     if (this._pointerId !== null) return;
     e.preventDefault();
+
+    // preventDefault above suppresses the compatibility mousedown, and with it
+    // the focus a press would otherwise give the handle, leaving the keyboard
+    // path reachable only by Tab. Skipped in hover mode, where the divider
+    // follows the cursor and focus would only suspend that.
+    if (!this._hover) this._swiper.focus({ preventScroll: true });
+
+    this._dragMoved = false;
 
     // Re-measure: the container can move without resizing (page scroll, a
     // sibling panel opening), and a stale origin would offset the whole drag.
@@ -320,16 +371,21 @@ export class Compare {
   }
 
   private _handleMove(e: MouseEvent): void {
-    // Capture retargets only the captured pointer. Any other pointer over the
-    // handle — a second finger, or a mouse / hovering pen on a hybrid device —
-    // still hit-tests to it and would otherwise snap the divider to itself.
-    if (
-      this._pointerId !== null &&
-      isPointerEvent(e) &&
-      e.pointerId !== this._pointerId
-    ) {
+    if (this._pointerId !== null) {
+      // Capture retargets only the captured pointer. Any other pointer over the
+      // handle, a second finger or a mouse / hovering pen on a hybrid device,
+      // still hit-tests to it and would otherwise snap the divider to itself.
+      if (isPointerEvent(e) && e.pointerId !== this._pointerId) return;
+      if (this._setPosition(this._getPosition(e))) this._dragMoved = true;
       return;
     }
+
+    // Hover mode drives the divider from anywhere on either map. While the
+    // handle holds focus the keyboard owns it instead: otherwise every arrow
+    // press would be undone by the next pixel of mouse motion, and the
+    // gesture's slideend would carry the cursor's offset rather than the one
+    // the keys asked for.
+    if (document.activeElement === this._swiper) return;
     this._setPosition(this._getPosition(e));
   }
 
@@ -355,8 +411,13 @@ export class Compare {
     // Another pointer pressed on the handle is still targeted at the swiper
     // even though it never became the drag, so its release lands here too.
     if (e.pointerId !== this._pointerId) return;
+    const moved = this._dragMoved;
     this._stopDrag();
-    this.fire('slideend', { currentPosition: this._position });
+    // A press that moved nothing, a click to focus the handle for instance, is
+    // not a completed gesture. Reporting one reads as "the user adjusted this"
+    // when they did not, and makes consumers that persist on slideend do the
+    // work again for nothing. The keyboard path is held to the same rule.
+    if (moved) this.fire('slideend', { currentPosition: this._position });
   }
 
   /**
@@ -370,7 +431,8 @@ export class Compare {
 
   /**
    * Moves the divider to `px` along the split axis, clamped to the configured
-   * bounds. A no-op while the container reports a zero extent.
+   * bounds. A no-op while the container reports a zero extent, and after
+   * {@link Compare.remove}.
    *
    * This does not fire `slideend`. That event reports the end of a user
    * gesture, and a caller moving the divider itself already knows where it put
@@ -399,6 +461,10 @@ export class Compare {
   }
 
   public remove(): void {
+    // Marked before anything is torn down: a late setPosition, from a debounced
+    // consumer callback racing a component cleanup, must not re-clip the
+    // containers this is about to hand back.
+    this._removed = true;
     this._clearSync();
     this._mapB.off('resize', this._onResize);
 
