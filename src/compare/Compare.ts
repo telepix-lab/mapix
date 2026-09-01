@@ -1,6 +1,10 @@
 import { Map } from 'mapbox-gl';
 import type { CompareEventType, CompareOptions, SlideEndEvent } from '../types';
 import { EventEmitter } from './event-emitter';
+import {
+  attachHandleAccessibility,
+  type HandleAccessibility,
+} from './handle-accessibility';
 import { syncMove } from './sync-move';
 
 type CompareContainer = string | HTMLElement;
@@ -25,6 +29,14 @@ const isPointerEvent = (e: MouseEvent): e is PointerEvent => 'pointerId' in e;
 
 /** Where the divider sits when the caller does not say. */
 const DEFAULT_RATIO = 0.5;
+
+/** Arrow-key increment, as a ratio of the container extent. */
+const DEFAULT_KEYBOARD_STEP = 0.02;
+
+// The handle needs an accessible name, and a library cannot know the app's
+// language. English is a poorer default than the app's own wording, but it
+// beats an unnamed slider; `handleLabel` replaces it.
+const DEFAULT_HANDLE_LABEL = 'Map compare divider';
 
 /** The divider's travel limits, resolved to a ratio at each end. */
 interface TravelLimits {
@@ -84,6 +96,7 @@ export class Compare {
   private _onEnd: (e: PointerEvent) => void;
   // Id of the pointer dragging the handle, null when no drag is in progress
   private _pointerId: number | null = null;
+  private _handle: HandleAccessibility;
   private _savedStyles = new WeakMap<HTMLElement, ContainerStyles>();
   // Split ratio (0–1) of the container extent, and the source of truth across
   // resizes: a container that momentarily reports a zero extent (hidden tab,
@@ -154,6 +167,24 @@ export class Compare {
     // neither sits above the other.
     this._styleContainer(mapA);
     this._styleContainer(mapB);
+
+    this._handle = attachHandleAccessibility({
+      element: this._swiper,
+      orientation: this._horizontal ? 'horizontal' : 'vertical',
+      label: options.handleLabel ?? DEFAULT_HANDLE_LABEL,
+      step: clampRatio(options.keyboardStep, DEFAULT_KEYBOARD_STEP),
+      limits: this._limits,
+      ratio: this._ratio,
+      moveTo: (ratio) => {
+        this._setRatio(ratio);
+      },
+      moveBy: (delta) => {
+        this._setRatio(this._ratio + delta);
+      },
+      onCommit: () => {
+        this.fire('slideend', { currentPosition: this._position });
+      },
+    });
 
     this._rect = mapB.getContainer().getBoundingClientRect();
     this._setRatio(this._ratio);
@@ -248,6 +279,7 @@ export class Compare {
 
     this._position = position;
     this._ratio = position / extent;
+    this._handle.update(this._ratio);
   }
 
   // Pointer offset along the split axis, relative to the map container.
@@ -373,6 +405,7 @@ export class Compare {
     this._restoreContainer(this._mapA);
     this._restoreContainer(this._mapB);
 
+    this._handle.destroy();
     this._swiper.removeEventListener('pointerdown', this._onDown);
     // If remove() runs mid-drag (e.g. a route change while the handle is held),
     // the captured pointer would keep delivering moves to a detached swiper and

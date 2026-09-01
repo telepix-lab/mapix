@@ -40,6 +40,16 @@ export interface CompareOptions {
    */
   bounds?: CompareBounds;
   /**
+   * Accessible name for the divider handle, used as its `aria-label`. Defaults
+   * to an English string; supply the app's own wording when it is localized.
+   */
+  handleLabel?: string;
+  /**
+   * How far one arrow key moves the divider, as a ratio (0–1) of the container
+   * extent. Defaults to 0.02 (2%). `PageUp` / `PageDown` move five times this.
+   */
+  keyboardStep?: number;
+  /**
    * Where the divider starts, as a ratio (0–1) of the container extent.
    * Defaults to 0.5 and is clamped to the configured bounds.
    *
