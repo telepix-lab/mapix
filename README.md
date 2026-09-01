@@ -97,7 +97,8 @@ compare.remove();
 
 `minRatio` reserves the same share at both ends. A layout obstructed on one side
 only, a panel over the left half say, can set the two ends independently with
-`bounds`, which supersedes `minRatio` when both are given:
+`bounds`. Each end of `bounds` overrides its own side of `minRatio`, so a
+one-sided `bounds` keeps the reserve on the other side:
 
 ```ts
 new Compare(beforeMap, afterMap, container, {
@@ -109,19 +110,30 @@ new Compare(beforeMap, afterMap, container, {
 Positions are px offsets from the container's start edge (left for a vertical
 split, top for a horizontal one). `setPosition` clamps to the bounds and fires
 no event, since `slideend` reports the end of a user gesture and a caller moving
-the divider already knows where it put it. Prefer `initialRatio` over a
-`setPosition` call straight after construction, so the divider does not show at
-the centre for a frame first.
+the divider already knows where it put it. It is a no-op while the container has
+no extent, and after `remove()`. Prefer `initialRatio` over a `setPosition` call
+straight after construction, so the divider does not show at the centre for a
+frame first.
+
+`slideend` reports a gesture that moved the divider. A press that changed
+nothing, a click to focus the handle for instance, or an arrow key pressed while
+the divider is already pinned at a bound, reports nothing.
 
 The handle is a `role="slider"` in the tab order, so the feature is operable
 without a pointer. Arrow keys move the divider the way they point (`Left` and
 `Up` toward the start edge, `Right` and `Down` toward the end), `PageUp` and
 `PageDown` move five steps, and `Home` and `End` jump to the bounds.
 `aria-valuemin`, `aria-valuemax` and `aria-valuenow` are kept in sync as
-percentages. A keyboard gesture reports one `slideend` when the key is released,
-so holding an arrow down does not produce a burst of events. `handleLabel` sets
-the accessible name, which otherwise defaults to English, and `keyboardStep`
-sets the arrow increment (default 2% of the container extent).
+percentages. A keyboard gesture reports one `slideend` when the key is released
+or focus leaves, so holding an arrow down does not produce a burst of events.
+`handleLabel` sets the accessible name, which otherwise defaults to English, and
+`keyboardStep` sets the arrow increment (default 2% of the container extent).
+
+A press focuses the handle, so a pointer user can fine-tune with the arrow keys
+straight after dragging. The handle ships no styling of its own, including no
+focus ring: give `.compare-swiper-vertical` / `.compare-swiper-horizontal` a
+visible `:focus-visible` style. A drag in progress owns the divider, and arrow
+keys are ignored until it ends.
 
 The divider is driven by Pointer Events, so mouse, touch and pen all work
 through one path. The handle captures the pointer on press: the drag survives
@@ -138,11 +150,21 @@ pixel offset, including across a resize to zero size (a hidden tab or panel).
 
 The two maps are camera-synced for the lifetime of the instance. The second map
 adopts the first one's camera at construction, so it does not have to be created
-already pointing at the right place. `padding` travels with the rest of the
-camera: padding shifts the projection centre, so two maps holding the same
-`center` under different padding would render it at different screen positions.
-Pad the "before" map to keep a UI panel off the subject and the "after" map
-follows.
+already pointing at the right place; any camera animation already running on it
+is cancelled by that jump. `padding` travels with the rest of the camera:
+padding shifts the projection centre, so two maps holding the same `center`
+under different padding would render it at different screen positions. Pad the
+"before" map to keep a UI panel off the subject and the "after" map follows.
+
+The sync is symmetric, so padding is effectively shared for as long as the
+instance lives: whichever map moves last sets it on the other, and `setPadding`
+counts as a move. Two maps meant to sit exactly on top of each other should not
+hold different padding anyway, but an app that needs one of them padded
+separately has to do it after `remove()`.
+
+`options.mousemove` makes the divider follow the cursor across both maps. While
+the handle holds focus the keyboard owns the divider instead, so arrow keys are
+not undone by the next pixel of mouse motion; hover resumes when focus leaves.
 
 ### File parsing
 
