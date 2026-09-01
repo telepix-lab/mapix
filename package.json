@@ -1,6 +1,6 @@
 {
   "name": "@telepix-lab/mapix",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A mapbox-gl toolkit: AOI drawing (rectangle/polygon with self-intersection detection), a map compare slider, and geospatial file parsing (GeoJSON/KML/Shapefile).",
   "license": "MIT",
   "author": "TelePIX",
