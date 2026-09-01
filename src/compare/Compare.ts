@@ -91,7 +91,7 @@ const resolveLabel = (label: string | undefined): string =>
  *
  * An instance owns both map containers for its lifetime: it snapshots their
  * inline styles on construction and writes them back in {@link Compare.remove}.
- * Use one instance per container pair at a time — overlapping instances over
+ * Use one instance per container pair at a time: overlapping instances over
  * the same maps would snapshot each other's styles as the originals.
  */
 export class Compare {
@@ -326,7 +326,7 @@ export class Compare {
   }
 
   // Pointer offset along the split axis, relative to the map container.
-  // Not clamped here — _setPosition applies the authoritative bounds.
+  // Not clamped here. _setPosition applies the authoritative limits.
   private _getPosition(e: MouseEvent): number {
     return this._horizontal
       ? e.clientY - this._rect.top
@@ -364,8 +364,8 @@ export class Compare {
     this._swiper.addEventListener('pointermove', this._onMove);
     this._swiper.addEventListener('pointerup', this._onEnd);
     this._swiper.addEventListener('pointercancel', this._onEnd);
-    // Capture can also be lost without either of those — the swiper being
-    // detached mid-drag, say — and the drag must not stay marked as live, or
+    // Capture can also be lost without either of those (the swiper being
+    // detached mid-drag, say), and the drag must not stay marked as live, or
     // every later press would be refused with no way to recover.
     this._swiper.addEventListener('lostpointercapture', this._onEnd);
   }
