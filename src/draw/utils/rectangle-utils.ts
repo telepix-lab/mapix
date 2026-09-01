@@ -95,7 +95,7 @@ function isRectangleRings(rings: Position[][]): boolean {
 
 // A collapsed ring (all points on one line, or all identical) passes the
 // axis-aligned edge test, so require a real extent on both axes. A rectangle
-// thinner than TOLERANCE on one side is treated as collapsed too — at ~1cm of
+// thinner than TOLERANCE on one side is treated as collapsed too: at ~1cm of
 // longitude it is a line for any practical AOI.
 function hasArea(ring: Position[]): boolean {
   const xs = ring.map((point) => point[0]);
