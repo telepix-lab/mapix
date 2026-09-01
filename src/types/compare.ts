@@ -11,8 +11,9 @@ export type CompareOrientation = 'vertical' | 'horizontal';
  * horizontal one).
  *
  * Unlike {@link CompareOptions.minRatio} the two ends are independent, so a
- * layout obstructed on one side only can express its range. Values outside
- * 0–1 are clamped, and a `max` below `min` pins the divider at `min`.
+ * layout obstructed on one side only can express its range. Either end may be
+ * left out, and falls back to what `minRatio` reserved on that side. Values
+ * outside 0–1 are clamped, and a `max` below `min` pins the divider at `min`.
  */
 export interface CompareBounds {
   /** Nearest the divider may come to the start edge. Defaults to 0. */
@@ -30,13 +31,15 @@ export interface CompareOptions {
    * `0.2` always reserves at least 20% for each side, and the divider cannot
    * be pushed past that. Defaults to 0 (the divider can travel to either end).
    *
-   * Shorthand for `bounds: { min: r, max: 1 - r }`; ignored when
-   * {@link CompareOptions.bounds} is given.
+   * Shorthand for `bounds: { min: r, max: 1 - r }`. Each end of
+   * {@link CompareOptions.bounds} overrides its own side of this, so a
+   * one-sided `bounds` keeps the reserve on the other side.
    */
   minRatio?: number;
   /**
-   * Travel limits for the divider. Supersedes {@link CompareOptions.minRatio}
-   * and can be asymmetric.
+   * Travel limits for the divider, which can be asymmetric. Each end given
+   * here overrides its own side of {@link CompareOptions.minRatio}; an end
+   * left out falls back to what `minRatio` reserved.
    */
   bounds?: CompareBounds;
   /**
