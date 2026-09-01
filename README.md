@@ -104,6 +104,14 @@ time and drops every listener the slider added, so a map reused elsewhere
 mid-drag. Resizing the container keeps the current split ratio rather than the
 pixel offset, including across a resize to zero size (a hidden tab or panel).
 
+The two maps are camera-synced for the lifetime of the instance. The second map
+adopts the first one's camera at construction, so it does not have to be created
+already pointing at the right place. `padding` travels with the rest of the
+camera: padding shifts the projection centre, so two maps holding the same
+`center` under different padding would render it at different screen positions.
+Pad the "before" map to keep a UI panel off the subject and the "after" map
+follows.
+
 ### File parsing
 
 ```ts
