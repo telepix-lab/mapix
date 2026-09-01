@@ -60,6 +60,14 @@ export class Compare {
     container: CompareContainer,
     options: CompareOptions = {}
   ) {
+    // Resolve the target element first. A bad selector has to throw before
+    // anything below has written to the page or to either map.
+    const target =
+      typeof container === 'string'
+        ? document.querySelector<HTMLElement>(container)
+        : container;
+    if (!target) throw new Error('Container not found');
+
     this._mapA = mapA;
     this._mapB = mapB;
     this._horizontal = options.orientation === 'horizontal';
@@ -81,6 +89,15 @@ export class Compare {
     this._snapshotContainer(mapA);
     this._snapshotContainer(mapB);
 
+    // Link the cameras before any DOM is mutated. syncMove now jumps the second
+    // map at setup, which fires that map's own move events synchronously, so a
+    // consumer handler throwing out of one would abandon the constructor. That
+    // must not be able to leave half-styled containers behind, with remove()
+    // unreachable because `new` never returned. Nothing above this line has
+    // written to the page, and syncMove aligns before it registers anything, so
+    // a throw there leaves no listeners either.
+    this._clearSync = syncMove(mapA, mapB);
+
     this._swiper = document.createElement('div');
     this._swiper.className = this._horizontal
       ? 'compare-swiper-horizontal'
@@ -95,18 +112,11 @@ export class Compare {
       : 'mapboxgl-compare';
     this._controlContainer.appendChild(this._swiper);
 
-    if (typeof container === 'string') {
-      const el = document.querySelector<HTMLElement>(container);
-      if (!el) throw new Error('Container not found');
-      el.appendChild(this._controlContainer);
-    } else {
-      container.appendChild(this._controlContainer);
-    }
+    target.appendChild(this._controlContainer);
 
-    // Style the containers before the first measurement — but after the
-    // container lookup above, so a failed construction leaves them untouched.
-    // Every measurement in this class then reads the same styled layout: the
-    // constructor here, `resize`, and the start of each drag.
+    // Style the containers before the first measurement, so every measurement
+    // in this class reads the same styled layout: the constructor here,
+    // `resize`, and the start of each drag.
     // Keep both maps interactive, and stack them at the same z-index so
     // neither sits above the other.
     this._styleContainer(mapA);
@@ -115,7 +125,6 @@ export class Compare {
     this._bounds = mapB.getContainer().getBoundingClientRect();
     this._applyRatio();
 
-    this._clearSync = syncMove(mapA, mapB);
     this._onResize = () => {
       this._bounds = mapB.getContainer().getBoundingClientRect();
       // Re-derive pixels from the ratio: the split stays proportional instead
