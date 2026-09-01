@@ -113,6 +113,16 @@ the divider already knows where it put it. Prefer `initialRatio` over a
 `setPosition` call straight after construction, so the divider does not show at
 the centre for a frame first.
 
+The handle is a `role="slider"` in the tab order, so the feature is operable
+without a pointer. Arrow keys move the divider the way they point (`Left` and
+`Up` toward the start edge, `Right` and `Down` toward the end), `PageUp` and
+`PageDown` move five steps, and `Home` and `End` jump to the bounds.
+`aria-valuemin`, `aria-valuemax` and `aria-valuenow` are kept in sync as
+percentages. A keyboard gesture reports one `slideend` when the key is released,
+so holding an arrow down does not produce a burst of events. `handleLabel` sets
+the accessible name, which otherwise defaults to English, and `keyboardStep`
+sets the arrow increment (default 2% of the container extent).
+
 The divider is driven by Pointer Events, so mouse, touch and pen all work
 through one path. The handle captures the pointer on press: the drag survives
 the cursor leaving the handle, a second pointer can neither take it over nor end
